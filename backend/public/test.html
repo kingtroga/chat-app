@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Chat tester</title></head>
+<body>
+  <h3>Socket.io tester</h3>
+  <input id="user" placeholder="username" value="tab1">
+  <input id="text" placeholder="message">
+  <button id="send">Send</button>
+  <ul id="log"></ul>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const user = document.getElementById('user');
+    const text = document.getElementById('text');
+    const logEl = document.getElementById('log');
+    const log = (msg) => {
+      const li = document.createElement('li');
+      li.textContent = msg;
+      logEl.appendChild(li);
+    };
+
+    const socket = io();
+    socket.on('connect', () => log('connected'));
+    socket.on('disconnect', () => log('disconnected'));
+    socket.on('new_message', (m) =>
+      log(`[${new Date(m.createdAt).toLocaleTimeString()}] ${m.username}: ${m.text}`)
+    );
+
+    document.getElementById('send').onclick = async () => {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user.value, text: text.value }),
+      });
+      if (!res.ok) log('error: ' + (await res.json()).error);
+      text.value = '';
+    };
+  </script>
+</body>
+</html>

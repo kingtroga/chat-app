@@ -3,37 +3,83 @@
 <head><meta charset="utf-8"><title>Chat tester</title></head>
 <body>
   <h3>Socket.io tester</h3>
-  <input id="user" placeholder="username" value="tab1">
-  <input id="text" placeholder="message">
-  <button id="send">Send</button>
-  <ul id="log"></ul>
+
+  <div id="join">
+    <input id="user" placeholder="username" value="web">
+    <button id="joinBtn">Join</button>
+  </div>
+
+  <div id="chat" hidden>
+    <p>Online: <span id="online">-</span></p>
+    <p id="typing" style="min-height:1.2em;color:#666"></p>
+    <input id="text" placeholder="message">
+    <button id="send">Send</button>
+    <ul id="log"></ul>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const user = document.getElementById('user');
-    const text = document.getElementById('text');
-    const logEl = document.getElementById('log');
+    const $ = (id) => document.getElementById(id);
     const log = (msg) => {
       const li = document.createElement('li');
       li.textContent = msg;
-      logEl.appendChild(li);
+      $('log').appendChild(li);
     };
 
-    const socket = io();
-    socket.on('connect', () => log('connected'));
-    socket.on('disconnect', () => log('disconnected'));
-    socket.on('new_message', (m) =>
-      log(`[${new Date(m.createdAt).toLocaleTimeString()}] ${m.username}: ${m.text}`)
-    );
+    let socket;
+    let username;
+    let lastEmit = 0;
+    let stopTimer;
+    const typers = new Set();
+    const renderTyping = () => {
+      $('typing').textContent = typers.size ? `${[...typers].join(', ')} typing...` : '';
+    };
 
-    document.getElementById('send').onclick = async () => {
+    $('joinBtn').onclick = () => {
+      username = $('user').value.trim();
+      if (!username) return;
+      $('join').hidden = true;
+      $('chat').hidden = false;
+
+      socket = io({ auth: { username } });
+      socket.on('connect', () => log('connected'));
+      socket.on('disconnect', () => log('disconnected'));
+      socket.on('new_message', (m) =>
+        log(`[${new Date(m.createdAt).toLocaleTimeString()}] ${m.username}: ${m.text}`)
+      );
+      socket.on('online_users', (list) => {
+        $('online').textContent = list.join(', ');
+        [...typers].forEach((u) => { if (!list.includes(u)) typers.delete(u); });
+        renderTyping();
+      });
+      socket.on('typing', ({ username: u }) => { typers.add(u); renderTyping(); });
+      socket.on('stop_typing', ({ username: u }) => { typers.delete(u); renderTyping(); });
+    };
+
+    $('text').oninput = () => {
+      if (!socket) return;
+      if (Date.now() - lastEmit > 2000) {
+        socket.emit('typing');
+        lastEmit = Date.now();
+      }
+      clearTimeout(stopTimer);
+      stopTimer = setTimeout(() => {
+        socket.emit('stop_typing');
+        lastEmit = 0;
+      }, 2500);
+    };
+
+    $('send').onclick = async () => {
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user.value, text: text.value }),
+        body: JSON.stringify({ username, text: $('text').value }),
       });
       if (!res.ok) log('error: ' + (await res.json()).error);
-      text.value = '';
+      $('text').value = '';
+      clearTimeout(stopTimer);
+      socket.emit('stop_typing');
+      lastEmit = 0;
     };
   </script>
 </body>
